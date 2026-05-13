@@ -1,0 +1,34 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Composer (PHP)
+vendor/
+
+# Laravel
+.env
+.env.*
+/storage/*.key
+/public/storage
+/storage/app/public
+/storage/framework/cache/data
+/storage/logs/*.log
+/bootstrap/cache/*.php
+
+# IDE/Editor
+.idea/
+.vscode/
+*.sublime-workspace
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+*.cache
+
+# Build files
+/public/build/
