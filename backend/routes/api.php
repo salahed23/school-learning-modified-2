@@ -26,15 +26,13 @@ Route::group([
     // ── Routes publiques (pas de token requis) ────────────────────────────
     Route::post('register', [AuthController::class, 'register']);
     Route::post('login',    [AuthController::class, 'login']);
+    Route::post('logout',   [AuthController::class, 'logout']);
 
     // ── Routes protégées (nécessitent un Access Token valide) ─────────────
     Route::middleware('auth:api')->group(function () {
         Route::post('me',      [AuthController::class, 'me']);
-        Route::post('logout',  [AuthController::class, 'logout']);
 
         // ── Refresh Token ─────────────────────────────────────────────────
-        // Le client envoie le Refresh Token ici pour obtenir un nouveau pair
-        // de tokens (Access + Refresh). L'ancien Refresh Token est invalidé.
         Route::post('refresh', [AuthController::class, 'refresh']);
     });
 });

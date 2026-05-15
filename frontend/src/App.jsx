@@ -1,112 +1,119 @@
 import React, { useEffect, useState } from 'react';
 
+const API_BASE = 'http://localhost:8000/api';
+
 const navLinks = [
     { label: 'Accueil', target: 'home' },
     { label: 'Cours', target: 'courses' },
     { label: 'À propos', target: 'about' },
 ];
 
+const getPasswordStrength = (pwd) => {
+    if (!pwd) return { score: 0, label: '', color: '#e2e8f0' };
+    const score = [
+        pwd.length >= 12,
+        /[A-Z]/.test(pwd),
+        /[a-z]/.test(pwd),
+        /[0-9]/.test(pwd),
+        /[^A-Za-z0-9]/.test(pwd),
+    ].filter(Boolean).length;
+    const levels = [
+        { label: '', color: '#e2e8f0' },
+        { label: 'Très faible', color: '#ef4444' },
+        { label: 'Faible', color: '#f97316' },
+        { label: 'Moyen', color: '#eab308' },
+        { label: 'Fort', color: '#84cc16' },
+        { label: 'Très fort', color: '#22c55e' },
+    ];
+    return { score, ...levels[Math.min(score, 5)] };
+};
+
 export default function App() {
     const [backendStatus, setBackendStatus] = useState(null);
-    const [currentView, setCurrentView] = useState('home'); // home, login, register, studentHome, teacherHome
+    const [currentView, setCurrentView] = useState('home');
     const [loginData, setLoginData] = useState({ email: '', password: '' });
-    const [registerData, setRegisterData] = useState({ first_name: '', last_name: '', email: '', password: '', password_confirmation: '', role: 'Etudiant' });
+    const [registerData, setRegisterData] = useState({
+        first_name: '', last_name: '', email: '',
+        password: '', password_confirmation: '',
+        role: 'Etudiant',
+    });
     const [loginErrors, setLoginErrors] = useState({});
     const [registerErrors, setRegisterErrors] = useState({});
+    const [loginTouched, setLoginTouched] = useState({});
+    const [registerTouched, setRegisterTouched] = useState({});
+    const [loginSubmitting, setLoginSubmitting] = useState(false);
+    const [registerSubmitting, setRegisterSubmitting] = useState(false);
     const [user, setUser] = useState(null);
     const [token, setToken] = useState(null);
     const [message, setMessage] = useState('');
+    const [messageType, setMessageType] = useState('error');
 
     const roleOptions = [
         { value: 'Etudiant', label: 'Étudiant' },
         { value: 'Enseignant', label: 'Enseignant' },
     ];
 
-    const getDashboardView = (role) => {
-        return role === 'Enseignant' ? 'teacherHome' : 'studentHome';
+    const getDashboardView = (role) => (role === 'Enseignant' ? 'teacherHome' : 'studentHome');
+
+    const sanitizeInput = (value) => value.replace(/[<>"'\/]/g, '').trim();
+
+    const showMessage = (text, type = 'error') => {
+        setMessage(text);
+        setMessageType(type);
     };
 
-    const sanitizeInput = (value) => {
-        return value.replace(/[<>"'\/]/g, '').trim();
-    };
-
-    const validateEmail = (value) => {
-        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-    };
-
-    const validateName = (value) => {
-        return /^[A-Za-zÀ-ÿ '-]{2,}$/.test(value.trim());
-    };
+    const validateEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+    const validateName = (value) => /^[A-Za-zÀ-ÿ '-]{2,}$/.test(value.trim());
 
     const validateLogin = () => {
         const errors = {};
-        if (!validateEmail(loginData.email)) {
-            errors.email = 'Email invalide.';
-        }
-        if (loginData.password.length < 12) {
-            errors.password = 'Le mot de passe doit contenir au moins 12 caractères.';
-        }
+        if (!validateEmail(loginData.email)) errors.email = 'Adresse email invalide.';
+        if (loginData.password.length < 12) errors.password = 'Minimum 12 caractères requis.';
         return errors;
     };
 
     const validateRegister = () => {
         const errors = {};
-        if (!validateName(registerData.first_name)) {
-            errors.first_name = 'Le prénom doit contenir au moins 2 lettres.';
-        }
-        if (!validateName(registerData.last_name)) {
-            errors.last_name = 'Le nom doit contenir au moins 2 lettres.';
-        }
-        if (!validateEmail(registerData.email)) {
-            errors.email = 'Email invalide.';
-        }
-        if (registerData.password.length < 12) {
-            errors.password = 'Le mot de passe doit contenir au moins 12 caractères.';
-        }
-        if (registerData.password !== registerData.password_confirmation) {
-            errors.password_confirmation = 'Les mots de passe ne correspondent pas.';
-        }
+        if (!validateName(registerData.first_name)) errors.first_name = 'Prénom invalide (min. 2 lettres).';
+        if (!validateName(registerData.last_name)) errors.last_name = 'Nom invalide (min. 2 lettres).';
+        if (!validateEmail(registerData.email)) errors.email = 'Adresse email invalide.';
+        if (registerData.password.length < 12) errors.password = 'Minimum 12 caractères requis.';
+        if (registerData.password !== registerData.password_confirmation) errors.password_confirmation = 'Les mots de passe ne correspondent pas.';
         return errors;
     };
 
+    const touchRegisterField = (field) => setRegisterTouched(prev => ({ ...prev, [field]: true }));
+    const touchLoginField = (field) => setLoginTouched(prev => ({ ...prev, [field]: true }));
+
     useEffect(() => {
-        fetch('http://localhost:8000/api/status')
-            .then(response => response.json())
-            .then(data => setBackendStatus(data))
+        fetch(`${API_BASE}/status`)
+            .then(r => r.json())
+            .then(d => setBackendStatus(d))
             .catch(() => setBackendStatus(null));
 
-        fetch('http://localhost:8000/api/auth/me', {
+        fetch(`${API_BASE}/auth/me`, {
             method: 'POST',
             credentials: 'include',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
         })
-        .then(response => response.json())
-        .then(data => {
-            if (data.user) {
-                setUser(data.user);
-                setCurrentView(getDashboardView(data.user.role));
-            }
+        .then(r => r.json())
+        .then(d => {
+            if (d.user) { setUser(d.user); setCurrentView(getDashboardView(d.user.role)); }
         })
-        .catch(() => {
-            setToken(null);
-            setUser(null);
-        });
+        .catch(() => { setToken(null); setUser(null); });
     }, []);
 
     const handleLogin = async (e) => {
         e.preventDefault();
         setMessage('');
+        setLoginTouched({ email: true, password: true });
         const validationErrors = validateLogin();
         setLoginErrors(validationErrors);
-        if (Object.keys(validationErrors).length) {
-            setMessage('Veuillez corriger les erreurs du formulaire.');
-            return;
-        }
+        if (Object.keys(validationErrors).length) return;
 
+        setLoginSubmitting(true);
         try {
-            const response = await fetch('http://localhost:8000/api/auth/login', {
+            const response = await fetch(`${API_BASE}/auth/login`, {
                 method: 'POST',
                 credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
@@ -115,84 +122,90 @@ export default function App() {
             const data = await response.json();
             if (response.ok && data.user) {
                 setToken(data.access_token || null);
-                const loggedUser = data.user || { email: loginData.email, role: data.role || 'Etudiant' };
-                setUser(loggedUser);
-                setCurrentView(getDashboardView(loggedUser.role));
-                setMessage('Connexion réussie');
+                setUser(data.user);
+                setCurrentView(getDashboardView(data.user.role));
+                showMessage('Connexion réussie', 'success');
             } else {
-                setMessage(data.error || data.message || 'Erreur de connexion');
+                showMessage(data.error || data.message || 'Email ou mot de passe incorrect.');
             }
-        } catch (error) {
-            setMessage('Erreur réseau');
+        } catch {
+            showMessage('Impossible de contacter le serveur. Vérifiez que le backend est démarré sur le port 8000.');
+        } finally {
+            setLoginSubmitting(false);
         }
     };
 
     const handleRegister = async (e) => {
         e.preventDefault();
         setMessage('');
+        setRegisterTouched({
+            first_name: true, last_name: true, email: true,
+            password: true, password_confirmation: true,
+        });
         const validationErrors = validateRegister();
         setRegisterErrors(validationErrors);
-        if (Object.keys(validationErrors).length) {
-            setMessage('Veuillez corriger les erreurs du formulaire.');
-            return;
-        }
-
+        if (Object.keys(validationErrors).length) return;
+        setRegisterSubmitting(true);
         try {
-            const response = await fetch('http://localhost:8000/api/auth/register', {
+            const response = await fetch(`${API_BASE}/auth/register`, {
                 method: 'POST',
                 credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(registerData),
+                body: JSON.stringify({
+                    first_name: registerData.first_name,
+                    last_name: registerData.last_name,
+                    email: registerData.email,
+                    password: registerData.password,
+                    password_confirmation: registerData.password_confirmation,
+                    role: registerData.role,
+                }),
             });
             const data = await response.json();
             if (response.ok && data.user) {
-                setToken(data.access_token || null);
-                const newUser = data.user || { email: registerData.email, role: registerData.role };
-                setUser(newUser);
-                setCurrentView(getDashboardView(newUser.role));
-                setMessage('Inscription réussie. Bienvenue !');
-            } else if (response.ok) {
-                setMessage('Inscription réussie. Vous pouvez maintenant vous connecter.');
                 setCurrentView('login');
+                showMessage('Inscription réussie ! Connectez-vous pour accéder à vos cours.', 'success');
+            } else if (data.errors) {
+                const serverErrors = {};
+                Object.keys(data.errors).forEach(k => {
+                    serverErrors[k] = Array.isArray(data.errors[k]) ? data.errors[k][0] : data.errors[k];
+                });
+                setRegisterErrors(serverErrors);
+                showMessage('Veuillez corriger les erreurs ci-dessous.');
             } else {
-                setMessage(data.error || data.message || 'Erreur d\'inscription');
+                showMessage(data.error || data.message || "Erreur lors de l'inscription.");
             }
-        } catch (error) {
-            setMessage('Erreur réseau');
+        } catch {
+            showMessage('Impossible de contacter le serveur. Vérifiez que le backend est démarré sur le port 8000.');
+        } finally {
+            setRegisterSubmitting(false);
         }
     };
 
     const handleLogout = async () => {
         try {
-            await fetch('http://localhost:8000/api/auth/logout', {
+            await fetch(`${API_BASE}/auth/logout`, {
                 method: 'POST',
                 credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
             });
-        } catch (error) {
-            // ignore network errors on logout
-        }
-
+        } catch { /* ignore */ }
         setToken(null);
         setUser(null);
         setCurrentView('home');
-        setMessage('Déconnexion réussie');
+        showMessage('Déconnexion réussie', 'success');
     };
 
     const renderHeader = () => (
         <header style={headerStyle}>
             <div style={headerInnerStyle}>
                 <div style={logoStyle}>
-                    <span style={logoIconStyle}>📘</span>
+                    <span style={{ fontSize: 20 }}>📘</span>
                     <span>School-learning</span>
                 </div>
                 <nav style={navStyle}>
                     {navLinks.map((link) => (
-                        <button
-                            key={link.target}
-                            style={navButtonStyle}
-                            onClick={() => setCurrentView(user ? getDashboardView(user.role) : 'home')}
-                        >
+                        <button key={link.target} style={navButtonStyle}
+                            onClick={() => setCurrentView(user ? getDashboardView(user.role) : 'home')}>
                             {link.label}
                         </button>
                     ))}
@@ -202,8 +215,8 @@ export default function App() {
                         <button onClick={handleLogout} style={headerButtonStyle}>Déconnexion</button>
                     ) : (
                         <>
-                            <button onClick={() => setCurrentView('login')} style={headerButtonStyleSecondary}>Connexion</button>
-                            <button onClick={() => setCurrentView('register')} style={headerButtonStyle}>S'inscrire</button>
+                            <button onClick={() => { setMessage(''); setCurrentView('login'); }} style={headerButtonStyleSecondary}>Connexion</button>
+                            <button onClick={() => { setMessage(''); setCurrentView('register'); }} style={headerButtonStyle}>S'inscrire</button>
                         </>
                     )}
                 </div>
@@ -217,9 +230,7 @@ export default function App() {
                 <div style={heroContentStyle}>
                     <p style={heroIntroStyle}>Apprenez à votre rythme</p>
                     <h1 style={heroTitleStyle}>Des cours structurés pour progresser chaque jour</h1>
-                    <p style={heroTextStyle}>
-                        Des cours créés par des enseignants experts. Vidéos, documents, quiz — tout en un.
-                    </p>
+                    <p style={heroTextStyle}>Des cours créés par des enseignants experts. Vidéos, documents, quiz — tout en un.</p>
                     <div style={heroButtonsStyle}>
                         <button onClick={() => setCurrentView('register')} style={heroPrimaryButtonStyle}>Découvrir les cours</button>
                         <button onClick={() => setCurrentView('login')} style={heroSecondaryButtonStyle}>En savoir plus</button>
@@ -227,33 +238,21 @@ export default function App() {
                 </div>
             </section>
             <section style={statsSectionStyle}>
-                <div style={statCardStyle}>
-                    <p style={statValueStyle}>120+</p>
-                    <p style={statLabelStyle}>Cours disponibles</p>
-                </div>
-                <div style={statCardStyle}>
-                    <p style={statValueStyle}>850</p>
-                    <p style={statLabelStyle}>Étudiants inscrits</p>
-                </div>
-                <div style={statCardStyle}>
-                    <p style={statValueStyle}>40</p>
-                    <p style={statLabelStyle}>Enseignants</p>
-                </div>
+                {[['120+', 'Cours disponibles'], ['850', 'Étudiants inscrits'], ['40', 'Enseignants']].map(([v, l]) => (
+                    <div key={l} style={statCardStyle}>
+                        <p style={statValueStyle}>{v}</p>
+                        <p style={statLabelStyle}>{l}</p>
+                    </div>
+                ))}
             </section>
-
             <section style={infoSectionStyle}>
-                <div style={infoCardStyle}>
-                    <h3>Accès immédiat</h3>
-                    <p>Entrez dans votre espace et accédez directement à vos cours depuis n'importe où.</p>
-                </div>
-                <div style={infoCardStyle}>
-                    <h3>Apprentissage interactif</h3>
-                    <p>Supports multimédias, quiz et suivi de progression pour rester motivé.</p>
-                </div>
-                <div style={infoCardStyle}>
-                    <h3>Communauté active</h3>
-                    <p>Partagez avec des enseignants et des étudiants, obtenez de l'aide en un clic.</p>
-                </div>
+                {[
+                    ["Accès immédiat", "Entrez dans votre espace et accédez directement à vos cours depuis n'importe où."],
+                    ["Apprentissage interactif", "Supports multimédias, quiz et suivi de progression pour rester motivé."],
+                    ["Communauté active", "Partagez avec des enseignants et des étudiants, obtenez de l'aide en un clic."],
+                ].map(([title, text]) => (
+                    <div key={title} style={infoCardStyle}><h3>{title}</h3><p>{text}</p></div>
+                ))}
             </section>
         </main>
     );
@@ -264,27 +263,11 @@ export default function App() {
                 <div style={heroContentStyle}>
                     <p style={heroIntroStyle}>Bienvenue étudiant</p>
                     <h1 style={heroTitleStyle}>Votre espace d'apprentissage</h1>
-                    <p style={heroTextStyle}>
-                        Retrouvez vos cours, exercices et ressources adaptés à votre parcours.
-                    </p>
+                    <p style={heroTextStyle}>Retrouvez vos cours, exercices et ressources adaptés à votre parcours.</p>
                     <div style={heroButtonsStyle}>
-                        <button onClick={() => setMessage('Accédez à vos cours dès maintenant.')} style={heroPrimaryButtonStyle}>Voir mes cours</button>
+                        <button style={heroPrimaryButtonStyle}>Voir mes cours</button>
                         <button onClick={() => setCurrentView('home')} style={heroSecondaryButtonStyle}>Retour à l'accueil</button>
                     </div>
-                </div>
-            </section>
-            <section style={statsSectionStyle}>
-                <div style={statCardStyle}>
-                    <p style={statValueStyle}>Mes notes</p>
-                    <p style={statLabelStyle}>Suivi des progrès</p>
-                </div>
-                <div style={statCardStyle}>
-                    <p style={statValueStyle}>Quiz</p>
-                    <p style={statLabelStyle}>Évaluez vos acquis</p>
-                </div>
-                <div style={statCardStyle}>
-                    <p style={statValueStyle}>Soutien</p>
-                    <p style={statLabelStyle}>Ressources et communauté</p>
                 </div>
             </section>
         </main>
@@ -296,199 +279,327 @@ export default function App() {
                 <div style={heroContentStyle}>
                     <p style={heroIntroStyle}>Bienvenue enseignant</p>
                     <h1 style={heroTitleStyle}>Votre tableau de bord pédagogique</h1>
-                    <p style={heroTextStyle}>
-                        Gérez vos cours, suivez les étudiants et partagez vos contenus en quelques clics.
-                    </p>
+                    <p style={heroTextStyle}>Gérez vos cours, suivez les étudiants et partagez vos contenus en quelques clics.</p>
                     <div style={heroButtonsStyle}>
-                        <button onClick={() => setMessage('Accédez à votre espace enseignant.')} style={heroPrimaryButtonStyle}>Gérer mes cours</button>
+                        <button style={heroPrimaryButtonStyle}>Gérer mes cours</button>
                         <button onClick={() => setCurrentView('home')} style={heroSecondaryButtonStyle}>Retour à l'accueil</button>
                     </div>
-                </div>
-            </section>
-            <section style={statsSectionStyle}>
-                <div style={statCardStyle}>
-                    <p style={statValueStyle}>Cohortes</p>
-                    <p style={statLabelStyle}>Organisez vos classes</p>
-                </div>
-                <div style={statCardStyle}>
-                    <p style={statValueStyle}>Ressources</p>
-                    <p style={statLabelStyle}>Documents, quiz et supports</p>
-                </div>
-                <div style={statCardStyle}>
-                    <p style={statValueStyle}>Feedback</p>
-                    <p style={statLabelStyle}>Suivi des étudiants</p>
                 </div>
             </section>
         </main>
     );
 
-    const renderLogin = () => (
-        <section style={formSectionStyle}>
-            <div style={loginCardStyle}>
-                <div style={loginHeaderStyle}>
-                    <span style={loginIconStyle}>📘</span>
-                    <div>
-                        <p style={loginBrandStyle}>School-learning</p>
-                        <h2 style={loginTitleStyle}>Bon retour !</h2>
-                        <p style={loginSubtitleStyle}>Connectez-vous pour accéder à vos cours.</p>
+    // ─── LOGIN FORM ──────────────────────────────────────────────────────────────
+    const renderLogin = () => {
+        const inlineErrors = validateLogin();
+        const fieldStatus = (field) => {
+            if (!loginTouched[field]) return 'idle';
+            return inlineErrors[field] ? 'error' : 'success';
+        };
+        const inputBorder = (field) => {
+            const s = fieldStatus(field);
+            if (s === 'error') return '2px solid #ef4444';
+            if (s === 'success') return '2px solid #22c55e';
+            return '1.5px solid #e2e8f0';
+        };
+
+        return (
+            <section style={formSectionStyle}>
+                <div style={authCardStyle}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 28 }}>
+                        <span style={{ fontSize: 32 }}>📘</span>
+                        <div>
+                            <p style={brandStyle}>School-learning</p>
+                            <h2 style={cardTitleStyle}>Bon retour !</h2>
+                            <p style={cardSubtitleStyle}>Connectez-vous pour accéder à vos cours.</p>
+                        </div>
                     </div>
-                </div>
 
-                <form onSubmit={handleLogin} style={loginFormStyle}>
-                    <label style={loginLabelStyle}>Adresse Email</label>
-                    <input
-                        type="email"
-                        placeholder="admin@teacher.com"
-                        value={loginData.email}
-                        onChange={(e) => {
-                            setLoginData({ ...loginData, email: e.target.value });
-                            setLoginErrors({ ...loginErrors, email: undefined });
-                        }}
-                        style={loginInputStyle}
-                        required
-                    />
-                    {loginErrors.email && <p style={fieldErrorStyle}>{loginErrors.email}</p>}
+                    {message && (
+                        <div style={messageType === 'success' ? successBannerStyle : errorBannerStyle}>
+                            {messageType === 'error' ? '⚠ ' : '✓ '}{message}
+                        </div>
+                    )}
 
-                    <div style={loginPasswordRowStyle}>
-                        <label style={loginLabelStyle}>Mot de passe</label>
-                        <button type="button" style={forgotLinkStyle} onClick={() => setMessage('Utilisez votre mot de passe habituel.')}>Oublié ?</button>
+                    <form onSubmit={handleLogin} style={{ display: 'grid', gap: 20 }} noValidate>
+                        <div>
+                            <label style={fieldLabelStyle}>Adresse Email</label>
+                            <div style={inputWrapperStyle}>
+                                <input
+                                    type="email"
+                                    placeholder="vous@exemple.com"
+                                    value={loginData.email}
+                                    onChange={(e) => {
+                                        setLoginData({ ...loginData, email: e.target.value });
+                                        setLoginErrors({ ...loginErrors, email: undefined });
+                                    }}
+                                    onBlur={() => touchLoginField('email')}
+                                    style={{ ...modernInputStyle, border: inputBorder('email') }}
+                                    required
+                                />
+                                {fieldStatus('email') === 'success' && <span style={iconSuccess}>✓</span>}
+                                {fieldStatus('email') === 'error' && <span style={iconError}>✗</span>}
+                            </div>
+                            {fieldStatus('email') === 'error' && (
+                                <p style={inlineErrorStyle}>{inlineErrors.email}</p>
+                            )}
+                        </div>
+
+                        <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <label style={fieldLabelStyle}>Mot de passe</label>
+                                <button type="button" style={forgotLinkStyle}>Mot de passe oublié ?</button>
+                            </div>
+                            <div style={inputWrapperStyle}>
+                                <input
+                                    type="password"
+                                    placeholder="••••••••••••"
+                                    value={loginData.password}
+                                    onChange={(e) => {
+                                        setLoginData({ ...loginData, password: e.target.value });
+                                        setLoginErrors({ ...loginErrors, password: undefined });
+                                    }}
+                                    onBlur={() => touchLoginField('password')}
+                                    style={{ ...modernInputStyle, border: inputBorder('password') }}
+                                    required
+                                />
+                                {fieldStatus('password') === 'success' && <span style={iconSuccess}>✓</span>}
+                                {fieldStatus('password') === 'error' && <span style={iconError}>✗</span>}
+                            </div>
+                            {fieldStatus('password') === 'error' && (
+                                <p style={inlineErrorStyle}>{inlineErrors.password}</p>
+                            )}
+                        </div>
+
+                        <button
+                            type="submit"
+                            disabled={loginSubmitting}
+                            style={{ ...submitButtonStyle, opacity: loginSubmitting ? 0.7 : 1, cursor: loginSubmitting ? 'not-allowed' : 'pointer' }}
+                        >
+                            {loginSubmitting ? '⏳ Connexion en cours...' : 'Se connecter'}
+                        </button>
+                    </form>
+
+                    <div style={footerRowStyle}>
+                        <span style={{ color: '#64748b', fontSize: 14 }}>Pas encore de compte ?</span>
+                        <button type="button" style={footerLinkStyle} onClick={() => { setMessage(''); setCurrentView('register'); }}>
+                            S'inscrire
+                        </button>
                     </div>
-                    <input
-                        type="password"
-                        placeholder="••••••••••••"
-                        value={loginData.password}
-                        onChange={(e) => {
-                            setLoginData({ ...loginData, password: e.target.value });
-                            setLoginErrors({ ...loginErrors, password: undefined });
-                        }}
-                        style={loginInputStyle}
-                        required
-                    />
-                    {loginErrors.password && <p style={fieldErrorStyle}>{loginErrors.password}</p>}
-                    <p style={loginHintStyle}>Utilisez un email valide et un mot de passe d'au moins 12 caractères.</p>
-
-                    <button type="submit" style={loginSubmitStyle}>Se connecter</button>
-                </form>
-
-                <div style={loginFooterStyle}>
-                    <span>Pas encore de compte ?</span>
-                    <button type="button" style={loginFooterLinkStyle} onClick={() => setCurrentView('register')}>S'inscrire</button>
+                    <button onClick={() => setCurrentView('home')} style={backButtonStyle}>← Retour à l'accueil</button>
                 </div>
-                <button onClick={() => setCurrentView('home')} style={loginBackStyle}>← Retour à l'accueil</button>
-                {message && <p style={messageStyle}>{message}</p>}
-            </div>
-        </section>
-    );
+            </section>
+        );
+    };
 
-    const renderRegister = () => (
-        <section style={formSectionStyle}>
-            <div style={loginCardStyle}>
-                <div style={loginHeaderStyle}>
-                    <span style={loginIconStyle}>📘</span>
-                    <div>
-                        <p style={loginBrandStyle}>School-learning</p>
-                        <h2 style={loginTitleStyle}>Rejoignez-nous</h2>
-                        <p style={loginSubtitleStyle}>Créez votre compte et commencez votre apprentissage.</p>
+    // ─── REGISTER FORM ───────────────────────────────────────────────────────────
+    const renderRegister = () => {
+        const inlineErrors = { ...validateRegister(), ...registerErrors };
+        const fieldStatus = (field) => {
+            if (!registerTouched[field]) return 'idle';
+            return inlineErrors[field] ? 'error' : 'success';
+        };
+        const inputBorder = (field) => {
+            const s = fieldStatus(field);
+            if (s === 'error') return '2px solid #ef4444';
+            if (s === 'success') return '2px solid #22c55e';
+            return '1.5px solid #e2e8f0';
+        };
+        const pwStrength = getPasswordStrength(registerData.password);
+        const allValid = Object.keys(validateRegister()).length === 0;
+
+        return (
+            <section style={formSectionStyle}>
+                <div style={{ ...authCardStyle, maxWidth: 520 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 28 }}>
+                        <span style={{ fontSize: 32 }}>📘</span>
+                        <div>
+                            <p style={brandStyle}>School-learning</p>
+                            <h2 style={cardTitleStyle}>Rejoignez-nous</h2>
+                            <p style={cardSubtitleStyle}>Créez votre compte gratuitement.</p>
+                        </div>
                     </div>
+
+                    {message && (
+                        <div style={messageType === 'success' ? successBannerStyle : errorBannerStyle}>
+                            {messageType === 'error' ? '⚠ ' : '✓ '}{message}
+                        </div>
+                    )}
+
+                    <form onSubmit={handleRegister} style={{ display: 'grid', gap: 18 }} noValidate>
+
+                        {/* Prénom + Nom */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                            <div>
+                                <label style={fieldLabelStyle}>Prénom</label>
+                                <div style={inputWrapperStyle}>
+                                    <input
+                                        type="text"
+                                        placeholder="Jean"
+                                        value={registerData.first_name}
+                                        onChange={(e) => setRegisterData({ ...registerData, first_name: sanitizeInput(e.target.value) })}
+                                        onBlur={() => touchRegisterField('first_name')}
+                                        style={{ ...modernInputStyle, border: inputBorder('first_name') }}
+                                    />
+                                    {fieldStatus('first_name') === 'success' && <span style={iconSuccess}>✓</span>}
+                                    {fieldStatus('first_name') === 'error' && <span style={iconError}>✗</span>}
+                                </div>
+                                {fieldStatus('first_name') === 'error' && (
+                                    <p style={inlineErrorStyle}>{inlineErrors.first_name}</p>
+                                )}
+                            </div>
+                            <div>
+                                <label style={fieldLabelStyle}>Nom</label>
+                                <div style={inputWrapperStyle}>
+                                    <input
+                                        type="text"
+                                        placeholder="Dupont"
+                                        value={registerData.last_name}
+                                        onChange={(e) => setRegisterData({ ...registerData, last_name: sanitizeInput(e.target.value) })}
+                                        onBlur={() => touchRegisterField('last_name')}
+                                        style={{ ...modernInputStyle, border: inputBorder('last_name') }}
+                                    />
+                                    {fieldStatus('last_name') === 'success' && <span style={iconSuccess}>✓</span>}
+                                    {fieldStatus('last_name') === 'error' && <span style={iconError}>✗</span>}
+                                </div>
+                                {fieldStatus('last_name') === 'error' && (
+                                    <p style={inlineErrorStyle}>{inlineErrors.last_name}</p>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Email */}
+                        <div>
+                            <label style={fieldLabelStyle}>Adresse Email</label>
+                            <div style={inputWrapperStyle}>
+                                <input
+                                    type="email"
+                                    placeholder="jean.dupont@exemple.com"
+                                    value={registerData.email}
+                                    onChange={(e) => setRegisterData({ ...registerData, email: e.target.value })}
+                                    onBlur={() => touchRegisterField('email')}
+                                    style={{ ...modernInputStyle, border: inputBorder('email') }}
+                                />
+                                {fieldStatus('email') === 'success' && <span style={iconSuccess}>✓</span>}
+                                {fieldStatus('email') === 'error' && <span style={iconError}>✗</span>}
+                            </div>
+                            {fieldStatus('email') === 'error' && (
+                                <p style={inlineErrorStyle}>{inlineErrors.email}</p>
+                            )}
+                        </div>
+
+                        {/* Rôle */}
+                        <div>
+                            <label style={fieldLabelStyle}>Je suis un…</label>
+                            <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
+                                {roleOptions.map(opt => (
+                                    <button
+                                        key={opt.value}
+                                        type="button"
+                                        onClick={() => setRegisterData({ ...registerData, role: opt.value })}
+                                        style={{
+                                            flex: 1,
+                                            padding: '12px 16px',
+                                            borderRadius: 14,
+                                            border: registerData.role === opt.value ? '2px solid #2563eb' : '1.5px solid #e2e8f0',
+                                            backgroundColor: registerData.role === opt.value ? '#eff6ff' : '#fff',
+                                            color: registerData.role === opt.value ? '#1d4ed8' : '#64748b',
+                                            fontWeight: registerData.role === opt.value ? 700 : 400,
+                                            cursor: 'pointer',
+                                            fontSize: 14,
+                                            transition: 'all 0.2s',
+                                        }}
+                                    >
+                                        {opt.value === 'Etudiant' ? '🎓 ' : '📖 '}{opt.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Mot de passe */}
+                        <div>
+                            <label style={fieldLabelStyle}>Mot de passe</label>
+                            <div style={inputWrapperStyle}>
+                                <input
+                                    type="password"
+                                    placeholder="••••••••••••"
+                                    value={registerData.password}
+                                    onChange={(e) => setRegisterData({ ...registerData, password: e.target.value })}
+                                    onBlur={() => touchRegisterField('password')}
+                                    style={{ ...modernInputStyle, border: inputBorder('password') }}
+                                />
+                                {fieldStatus('password') === 'success' && <span style={iconSuccess}>✓</span>}
+                                {fieldStatus('password') === 'error' && <span style={iconError}>✗</span>}
+                            </div>
+
+                            {/* Barre de force */}
+                            {registerData.password && (
+                                <div style={{ marginTop: 10 }}>
+                                    <div style={{ display: 'flex', gap: 5, marginBottom: 6 }}>
+                                        {[1, 2, 3, 4, 5].map(i => (
+                                            <div key={i} style={{
+                                                flex: 1, height: 5, borderRadius: 99,
+                                                backgroundColor: i <= pwStrength.score ? pwStrength.color : '#f1f5f9',
+                                                transition: 'background-color 0.3s',
+                                            }} />
+                                        ))}
+                                    </div>
+                                    {pwStrength.label && (
+                                        <p style={{ fontSize: 12, color: pwStrength.color, fontWeight: 700, margin: 0 }}>
+                                            Force : {pwStrength.label}
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+                            {fieldStatus('password') === 'error' && (
+                                <p style={inlineErrorStyle}>{inlineErrors.password}</p>
+                            )}
+                        </div>
+
+                        {/* Confirmation mot de passe */}
+                        <div>
+                            <label style={fieldLabelStyle}>Confirmer le mot de passe</label>
+                            <div style={inputWrapperStyle}>
+                                <input
+                                    type="password"
+                                    placeholder="••••••••••••"
+                                    value={registerData.password_confirmation}
+                                    onChange={(e) => setRegisterData({ ...registerData, password_confirmation: e.target.value })}
+                                    onBlur={() => touchRegisterField('password_confirmation')}
+                                    style={{ ...modernInputStyle, border: inputBorder('password_confirmation') }}
+                                />
+                                {fieldStatus('password_confirmation') === 'success' && <span style={iconSuccess}>✓</span>}
+                                {fieldStatus('password_confirmation') === 'error' && <span style={iconError}>✗</span>}
+                            </div>
+                            {fieldStatus('password_confirmation') === 'error' && (
+                                <p style={inlineErrorStyle}>{inlineErrors.password_confirmation}</p>
+                            )}
+                        </div>
+
+                        <button
+                            type="submit"
+                            disabled={registerSubmitting}
+                            style={{
+                                ...submitButtonStyle,
+                                opacity: (registerSubmitting || !registerData.rgpd_consent) ? 0.6 : 1,
+                                cursor: (registerSubmitting || !registerData.rgpd_consent) ? 'not-allowed' : 'pointer',
+                            }}
+                        >
+                            {registerSubmitting ? '⏳ Inscription en cours...' : 'Créer mon compte'}
+                        </button>
+                    </form>
+
+                    <div style={footerRowStyle}>
+                        <span style={{ color: '#64748b', fontSize: 14 }}>Vous avez déjà un compte ?</span>
+                        <button type="button" style={footerLinkStyle} onClick={() => { setMessage(''); setCurrentView('login'); }}>
+                            Se connecter
+                        </button>
+                    </div>
+                    <button onClick={() => setCurrentView('home')} style={backButtonStyle}>← Retour à l'accueil</button>
                 </div>
-
-                <form onSubmit={handleRegister} style={loginFormStyle}>
-                    <label style={loginLabelStyle}>Prénom</label>
-                    <input
-                        type="text"
-                        placeholder="Prénom"
-                        value={registerData.first_name}
-                        onChange={(e) => {
-                            setRegisterData({ ...registerData, first_name: sanitizeInput(e.target.value) });
-                            setRegisterErrors({ ...registerErrors, first_name: undefined });
-                        }}
-                        style={loginInputStyle}
-                        required
-                    />
-                    {registerErrors.first_name && <p style={fieldErrorStyle}>{registerErrors.first_name}</p>}
-
-                    <label style={loginLabelStyle}>Nom</label>
-                    <input
-                        type="text"
-                        placeholder="Nom"
-                        value={registerData.last_name}
-                        onChange={(e) => {
-                            setRegisterData({ ...registerData, last_name: sanitizeInput(e.target.value) });
-                            setRegisterErrors({ ...registerErrors, last_name: undefined });
-                        }}
-                        style={loginInputStyle}
-                        required
-                    />
-                    {registerErrors.last_name && <p style={fieldErrorStyle}>{registerErrors.last_name}</p>}
-
-                    <label style={loginLabelStyle}>Adresse Email</label>
-                    <input
-                        type="email"
-                        placeholder="email@example.com"
-                        value={registerData.email}
-                        onChange={(e) => {
-                            setRegisterData({ ...registerData, email: sanitizeInput(e.target.value) });
-                            setRegisterErrors({ ...registerErrors, email: undefined });
-                        }}
-                        style={loginInputStyle}
-                        required
-                    />
-                    {registerErrors.email && <p style={fieldErrorStyle}>{registerErrors.email}</p>}
-
-                    <label style={loginLabelStyle}>Rôle</label>
-                    <select
-                        value={registerData.role}
-                        onChange={(e) => setRegisterData({ ...registerData, role: e.target.value })}
-                        style={{ ...loginInputStyle, appearance: 'none' }}
-                        required
-                    >
-                        {roleOptions.map((option) => (
-                            <option key={option.value} value={option.value}>{option.label}</option>
-                        ))}
-                    </select>
-
-                    <label style={loginLabelStyle}>Mot de passe</label>
-                    <input
-                        type="password"
-                        placeholder="••••••••••••"
-                        value={registerData.password}
-                        onChange={(e) => {
-                            setRegisterData({ ...registerData, password: sanitizeInput(e.target.value) });
-                            setRegisterErrors({ ...registerErrors, password: undefined });
-                        }}
-                        style={loginInputStyle}
-                        required
-                    />
-                    {registerErrors.password && <p style={fieldErrorStyle}>{registerErrors.password}</p>}
-
-                    <label style={loginLabelStyle}>Confirmer mot de passe</label>
-                    <input
-                        type="password"
-                        placeholder="••••••••••••"
-                        value={registerData.password_confirmation}
-                        onChange={(e) => {
-                            setRegisterData({ ...registerData, password_confirmation: e.target.value });
-                            setRegisterErrors({ ...registerErrors, password_confirmation: undefined });
-                        }}
-                        style={loginInputStyle}
-                        required
-                    />
-                    {registerErrors.password_confirmation && <p style={fieldErrorStyle}>{registerErrors.password_confirmation}</p>}
-
-                    <p style={loginHintStyle}>Tous les champs doivent être remplis correctement pour protéger votre compte.</p>
-
-                    <button type="submit" style={loginSubmitStyle}>S'inscrire</button>
-                </form>
-
-                <div style={loginFooterStyle}>
-                    <span>Vous avez déjà un compte ?</span>
-                    <button type="button" style={loginFooterLinkStyle} onClick={() => setCurrentView('login')}>Connexion</button>
-                </div>
-                <button onClick={() => setCurrentView('home')} style={loginBackStyle}>← Retour à l'accueil</button>
-                {message && <p style={messageStyle}>{message}</p>}
-            </div>
-        </section>
-    );
+            </section>
+        );
+    };
 
     return (
         <div style={appStyle}>
@@ -501,6 +612,8 @@ export default function App() {
         </div>
     );
 }
+
+// ─── STYLES ─────────────────────────────────────────────────────────────────────
 
 const appStyle = {
     fontFamily: 'Inter, system-ui, sans-serif',
@@ -538,10 +651,6 @@ const logoStyle = {
     fontSize: '18px',
 };
 
-const logoIconStyle = {
-    fontSize: '20px',
-};
-
 const navStyle = {
     display: 'flex',
     gap: '18px',
@@ -577,7 +686,6 @@ const headerButtonStyle = {
 const headerButtonStyleSecondary = {
     ...headerButtonStyle,
     backgroundColor: 'transparent',
-    color: '#fff',
     border: '1px solid rgba(255,255,255,0.24)',
 };
 
@@ -588,10 +696,7 @@ const heroStyle = {
     color: '#fff',
 };
 
-const heroContentStyle = {
-    maxWidth: '760px',
-    margin: '0 auto',
-};
+const heroContentStyle = { maxWidth: '760px', margin: '0 auto' };
 
 const heroIntroStyle = {
     fontSize: '16px',
@@ -663,16 +768,8 @@ const statCardStyle = {
     color: '#fff',
 };
 
-const statValueStyle = {
-    fontSize: '42px',
-    fontWeight: 800,
-    margin: 0,
-};
-
-const statLabelStyle = {
-    color: '#94a3b8',
-    marginTop: '10px',
-};
+const statValueStyle = { fontSize: '42px', fontWeight: 800, margin: 0 };
+const statLabelStyle = { color: '#94a3b8', marginTop: '10px' };
 
 const infoSectionStyle = {
     display: 'grid',
@@ -694,195 +791,168 @@ const infoCardStyle = {
 const formSectionStyle = {
     display: 'flex',
     justifyContent: 'center',
-    padding: '80px 28px',
+    alignItems: 'flex-start',
+    padding: '60px 28px 100px',
 };
 
-const formCardStyle = {
+const authCardStyle = {
     width: '100%',
-    maxWidth: '480px',
-    backgroundColor: '#fff',
-    padding: '36px',
-    borderRadius: '24px',
-    boxShadow: '0 20px 60px rgba(15,23,42,0.08)',
+    maxWidth: 460,
+    backgroundColor: '#ffffff',
+    borderRadius: 28,
+    padding: '40px 36px',
+    boxShadow: '0 24px 80px rgba(15,23,42,0.1)',
+    border: '1px solid rgba(15,23,42,0.07)',
 };
 
-const formStyle = {
-    display: 'grid',
-    gap: '16px',
-    marginTop: '20px',
-};
-
-const inputStyle = {
-    width: '100%',
-    padding: '14px 16px',
-    borderRadius: '16px',
-    border: '1px solid #cbd5e1',
+const brandStyle = {
     fontSize: '15px',
-};
-
-const buttonStyle = {
-    padding: '14px 20px',
-    backgroundColor: '#2563eb',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '999px',
-    cursor: 'pointer',
     fontWeight: 700,
+    color: '#2563eb',
+    margin: 0,
 };
 
-const secondaryButtonStyle = {
-    ...buttonStyle,
-    backgroundColor: '#e2e8f0',
+const cardTitleStyle = {
+    fontSize: '28px',
+    fontWeight: 800,
+    margin: '4px 0 0',
     color: '#0f172a',
 };
 
-const messageStyle = {
-    marginTop: '16px',
-    color: '#ef4444',
-};
-
-const checkboxLabelStyle = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    fontSize: '14px',
-    color: '#334155',
-    marginTop: '8px',
-};
-
-const checkboxStyle = {
-    width: '16px',
-    height: '16px',
-};
-
-const loginCardStyle = {
-    width: '100%',
-    maxWidth: '460px',
-    backgroundColor: '#ffffff',
-    borderRadius: '32px',
-    padding: '38px',
-    boxShadow: '0 24px 80px rgba(15,23,42,0.12)',
-    border: '1px solid rgba(15,23,42,0.08)',
-};
-
-const loginHeaderStyle = {
-    display: 'grid',
-    gap: '14px',
-    marginBottom: '30px',
-};
-
-const loginIconStyle = {
-    fontSize: '28px',
-};
-
-const loginBrandStyle = {
-    fontSize: '16px',
-    fontWeight: 700,
-    color: '#2563eb',
-};
-
-const loginTitleStyle = {
-    fontSize: '32px',
-    fontWeight: 800,
+const cardSubtitleStyle = {
     margin: '6px 0 0',
-};
-
-const loginSubtitleStyle = {
-    margin: '10px 0 0',
-    fontSize: '15px',
+    fontSize: '14px',
     color: '#64748b',
 };
 
-const loginFormStyle = {
-    display: 'grid',
-    gap: '18px',
-};
-
-const loginLabelStyle = {
-    fontSize: '14px',
-    color: '#0f172a',
+const fieldLabelStyle = {
+    display: 'block',
+    fontSize: '13px',
     fontWeight: 600,
+    color: '#374151',
+    marginBottom: 6,
 };
 
-const loginInputStyle = {
+const inputWrapperStyle = {
+    position: 'relative',
+    display: 'flex',
+    alignItems: 'center',
+};
+
+const modernInputStyle = {
     width: '100%',
-    padding: '16px 18px',
-    borderRadius: '18px',
-    border: '1px solid #e2e8f0',
-    backgroundColor: '#eef2ff',
+    padding: '14px 44px 14px 16px',
+    borderRadius: 14,
+    border: '1.5px solid #e2e8f0',
+    backgroundColor: '#f8fafc',
     color: '#0f172a',
     fontSize: '15px',
+    outline: 'none',
+    boxSizing: 'border-box',
+    transition: 'border-color 0.2s, box-shadow 0.2s',
 };
 
-const loginPasswordRowStyle = {
+const iconSuccess = {
+    position: 'absolute',
+    right: 14,
+    fontSize: 16,
+    color: '#22c55e',
+    fontWeight: 700,
+    pointerEvents: 'none',
+};
+
+const iconError = {
+    position: 'absolute',
+    right: 14,
+    fontSize: 16,
+    color: '#ef4444',
+    fontWeight: 700,
+    pointerEvents: 'none',
+};
+
+const inlineErrorStyle = {
+    fontSize: '12px',
+    color: '#dc2626',
+    marginTop: 5,
     display: 'flex',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 4,
+};
+
+const errorBannerStyle = {
+    backgroundColor: '#fef2f2',
+    border: '1px solid #fecaca',
+    borderRadius: 12,
+    padding: '12px 16px',
+    fontSize: 13,
+    color: '#dc2626',
+    marginBottom: 20,
+    fontWeight: 500,
+};
+
+const successBannerStyle = {
+    backgroundColor: '#f0fdf4',
+    border: '1px solid #bbf7d0',
+    borderRadius: 12,
+    padding: '12px 16px',
+    fontSize: 13,
+    color: '#16a34a',
+    marginBottom: 20,
+    fontWeight: 500,
+};
+
+const submitButtonStyle = {
+    width: '100%',
+    padding: '16px 20px',
+    backgroundColor: '#2563eb',
+    color: '#fff',
+    border: 'none',
+    borderRadius: 14,
+    fontSize: '16px',
+    fontWeight: 700,
+    cursor: 'pointer',
+    boxShadow: '0 8px 24px rgba(37,99,235,0.28)',
+    transition: 'opacity 0.2s',
+};
+
+const footerRowStyle = {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 22,
+};
+
+const footerLinkStyle = {
+    background: 'transparent',
+    border: 'none',
+    color: '#2563eb',
+    fontWeight: 700,
+    cursor: 'pointer',
+    fontSize: 14,
 };
 
 const forgotLinkStyle = {
     background: 'transparent',
     border: 'none',
     color: '#2563eb',
-    fontSize: '14px',
+    fontSize: '13px',
     cursor: 'pointer',
     padding: 0,
+    fontWeight: 500,
 };
 
-const loginHintStyle = {
-    fontSize: '13px',
-    color: '#94a3b8',
-    margin: 0,
-};
-
-const fieldErrorStyle = {
-    color: '#dc2626',
-    fontSize: '13px',
-    margin: '6px 0 12px',
-    lineHeight: 1.4,
-};
-
-const loginSubmitStyle = {
-    padding: '16px 22px',
-    width: '100%',
-    backgroundColor: '#2563eb',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '18px',
-    fontSize: '16px',
-    fontWeight: 700,
-    cursor: 'pointer',
-    boxShadow: '0 20px 40px rgba(37,99,235,0.24)',
-};
-
-const loginFooterStyle = {
-    display: 'flex',
-    justifyContent: 'center',
-    gap: '8px',
-    alignItems: 'center',
-    marginTop: '20px',
-    color: '#64748b',
-    fontSize: '14px',
-};
-
-const loginFooterLinkStyle = {
-    background: 'transparent',
-    border: 'none',
-    color: '#2563eb',
-    cursor: 'pointer',
-    fontWeight: 700,
-};
-
-const loginBackStyle = {
-    marginTop: '28px',
+const backButtonStyle = {
+    marginTop: 16,
     display: 'block',
     width: '100%',
-    padding: '14px 22px',
+    padding: '13px 20px',
     backgroundColor: '#f1f5f9',
-    color: '#0f172a',
+    color: '#475569',
     border: 'none',
-    borderRadius: '18px',
+    borderRadius: 14,
     cursor: 'pointer',
     fontWeight: 600,
+    fontSize: 14,
+    boxSizing: 'border-box',
 };
-

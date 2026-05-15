@@ -41,7 +41,8 @@ class AuthController extends Controller
 
     protected function issueTokenResponse(string $accessToken, string $refreshToken, User $user, int $status = 200)
     {
-        $secure = app()->environment('production');
+        $secure   = app()->environment('production');
+        $sameSite = $secure ? 'none' : 'lax';
 
         return response()->json([
             'access_token'  => $accessToken,
@@ -50,17 +51,18 @@ class AuthController extends Controller
             'expires_in'    => self::ACCESS_TOKEN_TTL * 60,
             'user'          => $user,
         ], $status)
-            ->cookie(cookie('token', $accessToken, self::ACCESS_TOKEN_TTL, '/', null, $secure, true, false, 'none'))
-            ->cookie(cookie('refresh_token', $refreshToken, self::REFRESH_TOKEN_TTL, '/', null, $secure, true, false, 'none'));
+            ->cookie(cookie('token', $accessToken, self::ACCESS_TOKEN_TTL, '/', null, $secure, true, false, $sameSite))
+            ->cookie(cookie('refresh_token', $refreshToken, self::REFRESH_TOKEN_TTL, '/', null, $secure, true, false, $sameSite));
     }
 
     protected function forgetAuthCookies(\Illuminate\Http\JsonResponse $response): \Illuminate\Http\JsonResponse
     {
-        $secure = app()->environment('production');
+        $secure   = app()->environment('production');
+        $sameSite = $secure ? 'none' : 'lax';
 
         return $response
-            ->cookie(cookie('token', '', -1, '/', null, $secure, true, false, 'none'))
-            ->cookie(cookie('refresh_token', '', -1, '/', null, $secure, true, false, 'none'));
+            ->cookie(cookie('token', '', -1, '/', null, $secure, true, false, $sameSite))
+            ->cookie(cookie('refresh_token', '', -1, '/', null, $secure, true, false, $sameSite));
     }
 
     protected function getRefreshTokenFromRequest(Request $request): ?string
@@ -244,11 +246,11 @@ class AuthController extends Controller
         }
 
         $user = User::create([
-            'prenom'       => $request->first_name,
-            'nom_'         => $request->last_name,
-            'email'        => $request->email,
-            'mot_de_passe' => $request->password,
-            'role'         => $request->role,
+            'prenom'       => strip_tags(trim($request->input('first_name'))),
+            'nom_'         => strip_tags(trim($request->input('last_name'))),
+            'email'        => strtolower(trim($request->input('email'))),
+            'mot_de_passe' => $request->input('password'),
+            'role'         => $request->input('role'),
         ]);
 
         $this->guard()->factory()->setTTL(self::ACCESS_TOKEN_TTL);
@@ -279,13 +281,16 @@ class AuthController extends Controller
 
     public function logout(Request $request)
     {
-        $refreshToken = $this->getRefreshTokenFromRequest($request);
+        $refreshToken = $request->cookie('refresh_token') ?: $request->bearerToken();
         $this->revokeRefreshToken($refreshToken);
 
-        try {
-            $this->guard()->logout(true);
-        } catch (\Exception $e) {
-            // ignore logout errors
+        $accessToken = $request->cookie('token') ?: $request->bearerToken();
+        if ($accessToken) {
+            try {
+                $this->guard()->setToken($accessToken)->invalidate(true);
+            } catch (\Exception) {
+                // token déjà expiré ou invalide, on continue
+            }
         }
 
         return $this->forgetAuthCookies(response()->json(['message' => 'Déconnecté avec succès']));
@@ -302,12 +307,13 @@ class AuthController extends Controller
         $this->guard()->factory()->setTTL(self::ACCESS_TOKEN_TTL);
         $token = $this->guard()->refresh();
 
-        $secure = app()->environment('production');
+        $secure   = app()->environment('production');
+        $sameSite = $secure ? 'none' : 'lax';
 
         return response()->json([
             'access_token' => $token,
             'token_type' => 'bearer',
             'expires_in' => self::ACCESS_TOKEN_TTL * 60,
-        ])->cookie(cookie('token', $token, self::ACCESS_TOKEN_TTL, '/', null, $secure, true, false, 'none'));
+        ])->cookie(cookie('token', $token, self::ACCESS_TOKEN_TTL, '/', null, $secure, true, false, $sameSite));
     }
 }
