@@ -28,31 +28,28 @@ class AuthController extends Controller
         return Auth::guard('api');
     }
 
-    protected function cookieOptions(): array
-    {
-        return [
-            'path'     => '/',
-            'domain'   => null,
-            'secure'   => true,
-            'httpOnly' => true,
-            'sameSite' => 'none',
-        ];
-    }
-
     protected function issueTokenResponse(string $accessToken, string $refreshToken, User $user, int $status = 200)
     {
         $secure   = app()->environment('production');
         $sameSite = $secure ? 'none' : 'lax';
 
+        // Seul le refresh token va en cookie httpOnly — l'access token reste en mémoire JS
         return response()->json([
-            'access_token'  => $accessToken,
-            'refresh_token' => $refreshToken,
-            'token_type'    => 'bearer',
-            'expires_in'    => self::ACCESS_TOKEN_TTL * 60,
-            'user'          => $user,
-        ], $status)
-            ->cookie(cookie('token', $accessToken, self::ACCESS_TOKEN_TTL, '/', null, $secure, true, false, $sameSite))
-            ->cookie(cookie('refresh_token', $refreshToken, self::REFRESH_TOKEN_TTL, '/', null, $secure, true, false, $sameSite));
+            'access_token' => $accessToken,
+            'token_type'   => 'bearer',
+            'expires_in'   => self::ACCESS_TOKEN_TTL * 60,
+            'user'         => $user,
+        ], $status)->cookie(cookie(
+            'refresh_token',
+            $refreshToken,
+            self::REFRESH_TOKEN_TTL,
+            '/',
+            null,
+            $secure,
+            true,      // httpOnly : inaccessible depuis JS
+            false,
+            $sameSite
+        ));
     }
 
     protected function forgetAuthCookies(\Illuminate\Http\JsonResponse $response): \Illuminate\Http\JsonResponse
@@ -60,26 +57,9 @@ class AuthController extends Controller
         $secure   = app()->environment('production');
         $sameSite = $secure ? 'none' : 'lax';
 
-        return $response
-            ->cookie(cookie('token', '', -1, '/', null, $secure, true, false, $sameSite))
-            ->cookie(cookie('refresh_token', '', -1, '/', null, $secure, true, false, $sameSite));
-    }
-
-    protected function getRefreshTokenFromRequest(Request $request): ?string
-    {
-        return $request->bearerToken() ?: $request->cookie('refresh_token');
-    }
-
-    protected function revokeRefreshToken(?string $token): void
-    {
-        if (!$token) {
-            return;
-        }
-
-        $refresh = RefreshToken::where('token_hash', hash('sha256', $token))->first();
-        if ($refresh) {
-            $refresh->update(['RevokedAt' => now()]);
-        }
+        return $response->cookie(cookie(
+            'refresh_token', '', -1, '/', null, $secure, true, false, $sameSite
+        ));
     }
 
     #[OA\Post(
@@ -281,15 +261,19 @@ class AuthController extends Controller
 
     public function logout(Request $request)
     {
-        $refreshToken = $request->cookie('refresh_token') ?: $request->bearerToken();
-        $this->revokeRefreshToken($refreshToken);
+        $refreshToken = $request->cookie('refresh_token');
 
-        $accessToken = $request->cookie('token') ?: $request->bearerToken();
-        if ($accessToken) {
+        if ($refreshToken) {
+            // Révocation en base via le hash — le token brut n'est jamais stocké
+            RefreshToken::where('token_hash', hash('sha256', $refreshToken))
+                ->whereNull('RevokedAt')
+                ->update(['RevokedAt' => now()]);
+
+            // Invalider le JWT côté serveur
             try {
-                $this->guard()->setToken($accessToken)->invalidate(true);
+                $this->guard()->setToken($refreshToken)->invalidate(true);
             } catch (\Exception) {
-                // token déjà expiré ou invalide, on continue
+                // token déjà expiré, on continue
             }
         }
 
@@ -298,22 +282,33 @@ class AuthController extends Controller
 
     public function refresh(Request $request)
     {
-        $refreshToken = $this->getRefreshTokenFromRequest($request);
+        $refreshToken = $request->cookie('refresh_token');
         if (!$refreshToken) {
             return response()->json(['error' => 'Refresh token manquant'], 401);
         }
 
-        $this->guard()->setToken($refreshToken);
-        $this->guard()->factory()->setTTL(self::ACCESS_TOKEN_TTL);
-        $token = $this->guard()->refresh();
+        // Vérifier que le token n'est pas révoqué en base
+        $stored = RefreshToken::where('token_hash', hash('sha256', $refreshToken))
+            ->whereNull('RevokedAt')
+            ->where('ExpirerAt', '>', now())
+            ->first();
 
-        $secure   = app()->environment('production');
-        $sameSite = $secure ? 'none' : 'lax';
+        if (!$stored) {
+            return response()->json(['error' => 'Refresh token invalide ou révoqué'], 401);
+        }
+
+        try {
+            $this->guard()->setToken($refreshToken);
+            $this->guard()->factory()->setTTL(self::ACCESS_TOKEN_TTL);
+            $newAccessToken = $this->guard()->refresh();
+        } catch (\Exception) {
+            return response()->json(['error' => 'Refresh token expiré'], 401);
+        }
 
         return response()->json([
-            'access_token' => $token,
-            'token_type' => 'bearer',
-            'expires_in' => self::ACCESS_TOKEN_TTL * 60,
-        ])->cookie(cookie('token', $token, self::ACCESS_TOKEN_TTL, '/', null, $secure, true, false, $sameSite));
+            'access_token' => $newAccessToken,
+            'token_type'   => 'bearer',
+            'expires_in'   => self::ACCESS_TOKEN_TTL * 60,
+        ]);
     }
 }
