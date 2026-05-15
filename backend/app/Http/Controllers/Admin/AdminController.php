@@ -5,13 +5,9 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
-use Inertia\Inertia;
 
-/**
- * AdminController
- * Gère la page admin accessible UNIQUEMENT via /admin-secret-panel
- */
 class AdminController extends Controller
 {
     public function index()
@@ -24,12 +20,12 @@ class AdminController extends Controller
             'new_this_week'  => User::where('created_at', '>=', now()->subWeek())->count(),
         ];
 
-        $recentUsers = User::select('id', 'first_name', 'last_name', 'email', 'role', 'created_at', 'rgpd_consent_at')
+        $recentUsers = User::select('id_user', 'prenom', 'nom_', 'email', 'role', 'created_at')
             ->orderByDesc('created_at')
             ->limit(20)
             ->get();
 
-        return Inertia::render('Admin/Dashboard', [
+        return response()->json([
             'stats'       => $stats,
             'recentUsers' => $recentUsers,
         ]);
@@ -37,15 +33,16 @@ class AdminController extends Controller
 
     public function users(Request $request)
     {
-        $query = User::select('id', 'first_name', 'last_name', 'email', 'role', 'created_at', 'rgpd_consent_at');
+        $query = User::select('id_user', 'prenom', 'nom_', 'email', 'role', 'created_at');
 
         if ($request->search) {
             $query->where(function ($q) use ($request) {
                 $q->where('email', 'like', '%' . $request->search . '%')
-                  ->orWhere('first_name', 'like', '%' . $request->search . '%')
-                  ->orWhere('last_name', 'like', '%' . $request->search . '%');
+                  ->orWhere('prenom', 'like', '%' . $request->search . '%')
+                  ->orWhere('nom_', 'like', '%' . $request->search . '%');
             });
         }
+
         if ($request->role) {
             $query->where('role', $request->role);
         }
@@ -56,29 +53,30 @@ class AdminController extends Controller
     public function updateRole(Request $request, User $user)
     {
         $request->validate(['role' => 'required|in:Admin,Enseignant,Etudiant']);
+
         $old = $user->role;
         $user->update(['role' => $request->role]);
 
         Log::info('[ADMIN] Rôle modifié', [
-            'admin_id'  => auth()->id(),
-            'target_id' => $user->id,
+            'admin_id'  => Auth::id(),
+            'target_id' => $user->getKey(),
             'old_role'  => $old,
             'new_role'  => $request->role,
         ]);
 
-        return response()->json(['status' => 'success', 'message' => 'Rôle mis à jour.']);
+        return response()->json(['message' => 'Rôle mis à jour.']);
     }
 
     public function deleteUser(User $user)
     {
-        $data = ['id' => $user->id, 'email' => $user->email];
+        $data = ['id_user' => $user->getKey(), 'email' => $user->email];
         $user->delete();
 
-        Log::info('[ADMIN][RGPD] Compte supprimé (droit à l\'effacement)', [
-            'admin_id' => auth()->id(),
+        Log::info('[ADMIN][RGPD] Compte supprimé', [
+            'admin_id' => Auth::id(),
             'deleted'  => $data,
         ]);
 
-        return response()->json(['status' => 'success', 'message' => 'Utilisateur supprimé.']);
+        return response()->json(['message' => 'Utilisateur supprimé.']);
     }
 }

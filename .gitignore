@@ -1,34 +1,75 @@
-# Node.js
+# ── Dépendances ───────────────────────────────────────────────────────────────
 node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Composer (PHP)
 vendor/
 
-# Laravel
+# ── Variables d'environnement (SECRETS) ───────────────────────────────────────
 .env
 .env.*
-/storage/*.key
-/public/storage
-/storage/app/public
-/storage/framework/cache/data
-/storage/logs/*.log
-/bootstrap/cache/*.php
+!.env.example
 
-# IDE/Editor
+# ── Clés et certificats ───────────────────────────────────────────────────────
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.csr
+/storage/*.key
+
+# ── Laravel – cache et fichiers générés ───────────────────────────────────────
+bootstrap/cache/*.php
+backend/bootstrap/cache/*.php
+storage/framework/cache/data/
+storage/framework/sessions/
+storage/framework/views/
+backend/storage/framework/cache/data/
+backend/storage/framework/sessions/
+backend/storage/framework/views/
+
+# ── Laravel – logs ────────────────────────────────────────────────────────────
+*.log
+storage/logs/
+backend/storage/logs/
+
+# ── Laravel – build Vite / assets publics ────────────────────────────────────
+public/build/
+backend/public/build/
+public/hot
+backend/public/hot
+public/storage
+backend/public/storage
+
+# ── Swagger – docs générées (reconstruites par artisan) ──────────────────────
+backend/storage/api-docs/
+
+# ── Base de données SQLite (on utilise MySQL) ─────────────────────────────────
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# ── Frontend – build ──────────────────────────────────────────────────────────
+frontend/dist/
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# ── Système d'exploitation ────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ── Éditeurs / IDE ────────────────────────────────────────────────────────────
 .idea/
 .vscode/
 *.sublime-workspace
+*.swp
+*.swo
+*~
 
-# System files
-.DS_Store
-Thumbs.db
-
-# Logs
-*.log
+# ── Divers ────────────────────────────────────────────────────────────────────
 *.cache
-
-# Build files
-/public/build/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

@@ -13,6 +13,11 @@ use Illuminate\Support\Facades\Route;
 |                     Utilisé UNIQUEMENT sur /api/auth/refresh
 */
 
+// Route de statut
+Route::get('status', function () {
+    return response()->json(['status' => 'ok', 'service' => 'school-backend']);
+});
+
 Route::group([
     'middleware' => 'api',
     'prefix'     => 'auth',
