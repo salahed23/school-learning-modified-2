@@ -54,5 +54,3 @@ Route::prefix('admin-secret-panel')
         Route::patch('/users/{user}/role',       [AdminController::class, 'updateRole'])->name('users.role');
         Route::delete('/users/{user}',           [AdminController::class, 'deleteUser'])->name('users.delete');
     });
-
-require __DIR__ . '/auth.php';
